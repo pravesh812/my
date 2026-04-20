@@ -17,9 +17,8 @@ Write-Output "=== Starting WinRM Hardened Setup for Harness (NTLM) ==="
 # Allow script execution temporarily
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
-# (Optional) Set Admin password - use secure method in production
-# net user Administrator "mypassword!"
-
+#local accounts + NTLM (Harness scenario): Kerberos is not used so disabled
+Set-Item WSMan:\localhost\Service\Auth\Kerberos -Value $false
 # Get hostname (AWS IMDSv2 fallback supported)
 try {
     $token = Invoke-RestMethod `
