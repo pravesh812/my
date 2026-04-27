@@ -12,41 +12,37 @@
 
 <powershell>
 Write-Output "=== Starting WinRM HTTPS Configuration ==="
-# 1. Enable WinRM Service
+# Enable WinRM
 Write-Output "Enabling WinRM service..."
 winrm quickconfig -q
-Set-Service -Name WinRM -StartupType Automatic
-Start-Service -Name WinRM
-
-# 2. Create Self-Signed Certificate for HTTPS
+Set-Service WinRM -StartupType Automatic
+Start-Service WinRM
+# Create a self-signed certificate
 Write-Output "Creating self-signed certificate..."
-$cert = New-SelfSignedCertificate -DnsName 'localhost' -CertStoreLocation Cert:\LocalMachine\My
+$cert = New-SelfSignedCertificate -DnsName "localhost" -CertStoreLocation Cert:\LocalMachine\My
+# Capture certificate thumbprint
 $thumbprint = $cert.Thumbprint
-
-# 3. Remove existing HTTPS listener (if exists)
-Write-Output "Removing existing HTTPS listener if present..."
+# Remove existing WinRM HTTPS listener if present
+Write-Output "Removing existing WinRM HTTPS listener (if any)..."
 winrm delete winrm/config/Listener?Address=*+Transport=HTTPS 2>$null
-
-# 4. Create WinRM HTTPS Listener
-Write-Output "Creating HTTPS listener on port 5986..."
-winrm create winrm/config/Listener?Address=*+Transport=HTTPS "@{Hostname='localhost'; CertificateThumbprint='$thumbprint'}"
-Restart-Service WinRM
-
-# 5. Allow WinRM through Windows Firewall
-Write-Output "Configuring firewall rule..."
-New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow
-
-# 7. Enable Local Administrator Account
-Write-Output "Enabling Administrator account..."
-Enable-LocalUser -Name "Administrator"
-
-# 9. Registry setting for remote local admin access
-Write-Output "Setting LocalAccountTokenFilterPolicy..."
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LocalAccountTokenFilterPolicy" -Value 1 -PropertyType DWord -Force
-
-# 10. Restart WinRM service
+# Create WinRM HTTPS listener
+Write-Output "Creating WinRM HTTPS listener..."
+winrm create winrm/config/Listener?Address=*+Transport=HTTPS `
+"@{Hostname=""localhost"";CertificateThumbprint=""$thumbprint""}"
+# Restart WinRM service
 Write-Output "Restarting WinRM service..."
 Restart-Service WinRM
-
+# Open firewall port 5986
+Write-Output "Configuring firewall rule..."
+New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow
+# Enable local Administrator account
+Write-Output "Enabling Administrator account..."
+Enable-LocalUser -Name "Administrator"
+# Allow remote local admin access
+Write-Output "Setting LocalAccountTokenFilterPolicy..."
+New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LocalAccountTokenFilterPolicy" -Value 1 -PropertyType DWord -Force
+# Final restart of WinRM
+Write-Output "Restarting WinRM service (final)..."
+Restart-Service WinRM
 Write-Output "=== WinRM HTTPS Configuration Completed ==="
 </powershell>
