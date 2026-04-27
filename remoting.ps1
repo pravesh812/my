@@ -10,103 +10,43 @@
 # - Enabling LocalAccountTokenFilterPolicy for local account access
 # ============================================
 
-$ErrorActionPreference = 'Stop'
+<powershell>
+Write-Output "=== Starting WinRM HTTPS Configuration ==="
+# 1. Enable WinRM Service
+Write-Output "Enabling WinRM service..."
+winrm quickconfig -q
+Set-Service -Name WinRM -StartupType Automatic
+Start-Service -Name WinRM
 
-Write-Output "=== Starting WinRM Hardened Setup for Harness (NTLM) ==="
-
-# Allow script execution temporarily
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-
-#local accounts + NTLM (Harness scenario): Kerberos is not used so disabled
-Set-Item WSMan:\localhost\Service\Auth\Kerberos -Value $false
-# Get hostname (AWS IMDSv2 fallback supported)
-try {
-    $token = Invoke-RestMethod `
-        -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} `
-        -Method PUT `
-        -Uri "http://169.254.169.254/latest/api/token"
-
-    $hostname = Invoke-RestMethod `
-        -Headers @{"X-aws-ec2-metadata-token" = $token} `
-        -Method GET `
-        -Uri "http://169.254.169.254/latest/meta-data/hostname"
-}
-catch {
-    $hostname = $env:COMPUTERNAME
-}
-
-Write-Output "Hostname: $hostname"
-
-# Enable and start WinRM
-Set-Service WinRM -StartupType Automatic
-Start-Service WinRM
-
-Enable-PSRemoting -Force
-
-# Remove existing listeners
-Get-ChildItem WSMan:\localhost\Listener | ForEach-Object {
-    $transport = ($_.Keys -split '=')[1]
-    Remove-WSManInstance `
-        -ResourceURI 'winrm/config/Listener' `
-        -SelectorSet @{ Address = '*'; Transport = $transport }
-}
-
-Write-Output "Old listeners removed"
-
-# Create self-signed certificate
-$cert = New-SelfSignedCertificate `
-    -DnsName $hostname `
-    -CertStoreLocation "Cert:\LocalMachine\My" `
-    -NotAfter (Get-Date).AddYears(3)
-
+# 2. Create Self-Signed Certificate for HTTPS
+Write-Output "Creating self-signed certificate..."
+$cert = New-SelfSignedCertificate -DnsName 'localhost' -CertStoreLocation Cert:\LocalMachine\My
 $thumbprint = $cert.Thumbprint
 
-# Create HTTPS listener
-New-WSManInstance `
-    -ResourceURI 'winrm/config/Listener' `
-    -SelectorSet @{ Transport = 'HTTPS'; Address = '*' } `
-    -ValueSet @{ Hostname = $hostname; CertificateThumbprint = $thumbprint }
+# 3. Remove existing HTTPS listener (if exists)
+Write-Output "Removing existing HTTPS listener if present..."
+winrm delete winrm/config/Listener?Address=*+Transport=HTTPS 2>$null
 
-Write-Output "HTTPS listener created"
-
-# Harden authentication settings
-Set-Item WSMan:\localhost\Service\Auth\Basic -Value $false
-Set-Item WSMan:\localhost\Client\Auth\Basic -Value $false
-Set-Item WSMan:\localhost\Service\Auth\Negotiate -Value $true
-Set-Item WSMan:\localhost\Service\Auth\CredSSP -Value $false
-
-# Disallow unencrypted traffic
-Set-Item WSMan:\localhost\Service\AllowUnencrypted -Value $false
-Set-Item WSMan:\localhost\Client\AllowUnencrypted -Value $false
-
-# Fix remote UAC restrictions for local accounts
-New-ItemProperty `
-    -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
-    -Name "LocalAccountTokenFilterPolicy" `
-    -Value 1 `
-    -PropertyType DWORD `
-    -Force
-
-Write-Output "LocalAccountTokenFilterPolicy enabled"
-
-# Configure firewall
-netsh advfirewall firewall delete rule name="Windows Remote Management (HTTP-In)" 2>$null
-
-New-NetFirewallRule `
-    -DisplayName "WinRM HTTPS 5986" `
-    -Direction Inbound `
-    -Protocol TCP `
-    -LocalPort 5986 `
-    -Action Allow
-
-Write-Output "Firewall configured"
-
-# Restart WinRM to apply changes
+# 4. Create WinRM HTTPS Listener
+Write-Output "Creating HTTPS listener on port 5986..."
+winrm create winrm/config/Listener?Address=*+Transport=HTTPS "@{Hostname='localhost'; CertificateThumbprint='$thumbprint'}"
 Restart-Service WinRM
 
-# Validation
-Write-Output "=== VALIDATION ==="
-winrm enumerate winrm/config/listener
-winrm get winrm/config/service/auth
+# 5. Allow WinRM through Windows Firewall
+Write-Output "Configuring firewall rule..."
+New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow
 
-Write-Output "=== WinRM setup completed successfully ==="
+# 7. Enable Local Administrator Account
+Write-Output "Enabling Administrator account..."
+Enable-LocalUser -Name "Administrator"
+
+# 9. Registry setting for remote local admin access
+Write-Output "Setting LocalAccountTokenFilterPolicy..."
+New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LocalAccountTokenFilterPolicy" -Value 1 -PropertyType DWord -Force
+
+# 10. Restart WinRM service
+Write-Output "Restarting WinRM service..."
+Restart-Service WinRM
+
+Write-Output "=== WinRM HTTPS Configuration Completed ==="
+</powershell>
