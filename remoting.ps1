@@ -40,11 +40,12 @@ Restart-Service WinRM
 
 # Open firewall port 5986
 Write-Output "Configuring firewall rule..."
-New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow
+New-NetFirewallRule -DisplayName "WinRM-HTTPS-5986" -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow
 # Enable local Administrator account
 Write-Output "Enabling Administrator account..."
 Enable-LocalUser -Name "Administrator"
-
+# Windows to change a network’s profile to Private.
+Set-NetConnectionProfile -NetworkCategory Private
 # Allow remote local admin access
 Write-Output "Setting LocalAccountTokenFilterPolicy..."
 New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LocalAccountTokenFilterPolicy" -Value 1 -PropertyType DWord -Force
